@@ -2,7 +2,7 @@
 
 Automated File Upload Script for X50 Hologram Fan.
 
-## How to Use
+## Run with Python
 
 Install the requirements:
 
@@ -15,3 +15,7 @@ Run the script:
 ```bash
 python auto_uploader.py
 ```
+
+## Run with Windows Native Executable
+
+Run `auto_uploader.exe` in the project root.
