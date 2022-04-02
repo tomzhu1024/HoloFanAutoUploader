@@ -422,7 +422,7 @@ def enable_service_button(value):
     app_view.btn_stop_service.Enable(value)
 
 
-def safe_fan(func):
+def require_fan_lock(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         fan_lock.acquire()
@@ -432,7 +432,7 @@ def safe_fan(func):
     return wrapper
 
 
-def safe_console(func):
+def require_console_lock(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         console_lock.acquire()
@@ -442,7 +442,7 @@ def safe_console(func):
     return wrapper
 
 
-@safe_console
+@require_console_lock
 def write_to_console(fg, bg, message, end='\n'):
     app_view.console.SetDefaultStyle(wx.TextAttr(fg, bg))
     app_view.console.AppendText(f"{message}{end}")
@@ -497,7 +497,7 @@ def on_btn_mon_path():
     write_to_console(*COLOR_WHITE, f'Set monitor path to {watch_path}')
 
 
-@safe_fan
+@require_fan_lock
 @pretty_block
 def on_btn_show_ver():
     try:
@@ -513,7 +513,7 @@ def on_btn_show_ver():
         write_to_console(*COLOR_RED, f' - {str(e)}')
 
 
-@safe_fan
+@require_fan_lock
 @pretty_block
 def on_btn_list_video():
     try:
@@ -642,7 +642,7 @@ def on_btn_stop_breath():
         write_to_console(*COLOR_RED, f' - {str(e)}')
 
 
-@safe_fan
+@require_fan_lock
 @pretty_block
 def on_btn_start_fan():
     try:
@@ -654,7 +654,7 @@ def on_btn_start_fan():
         write_to_console(*COLOR_RED, f' - {str(e)}')
 
 
-@safe_fan
+@require_fan_lock
 @pretty_block
 def on_btn_stop_fan():
     try:
@@ -706,6 +706,12 @@ def web_server_worker():
 def service_worker():
     global service_status
     try:
+        service_status = True
+        detected_file_names = []
+        detected_file_durations = []
+        on_device_file_durations = []
+        next_pop_time = 0
+
         write_to_console(*COLOR_GREEN, 'Automation service started')
 
         if not os.path.exists(watch_path):
@@ -723,18 +729,33 @@ def service_worker():
         # Disable buttons
         enable_non_service_button(False)
 
-        # Clear all videos
-        write_to_console(*COLOR_BLUE, 'Started to clear all videos...')
-        num_video_cleared = FanControl.clear_video(dev_ip_addr)
-        write_to_console(*COLOR_GREEN, f'Successfully cleared {max(0, num_video_cleared)} videos')
+        # Scan watch folder
+        file_count = 0
+        for filename in os.listdir(watch_path):
+            full_path = os.path.join(watch_path, filename)
+            if not os.path.isfile(full_path):
+                continue
+            file_count += 1
+
+        if file_count == 0:
+            # Clear all videos
+            write_to_console(*COLOR_BLUE, 'Found 0 video in watch folder, started to clear all videos on device...')
+            num_video_cleared = FanControl.clear_video(dev_ip_addr)
+            write_to_console(*COLOR_GREEN, f'Successfully cleared {max(0, num_video_cleared)} videos on device')
+        else:
+            # Mark videos on device
+            write_to_console(*COLOR_BLUE,
+                             f'Found {file_count} videos in watch folder, started to reduce the number of videos on '
+                             f'device to one...')
+            num_videos_on_device = len(FanControl.list_video(dev_ip_addr))
+            while num_videos_on_device > 1:
+                num_videos_on_device = FanControl.pop_video(dev_ip_addr)
+            on_device_file_durations.append(-1)
+            write_to_console(*COLOR_GREEN,
+                             f'Reduced the number of videos on device to one')
 
         # Service loop
-        write_to_console(*COLOR_BLUE, f'Started automation service, watching "{watch_path}" folder...')
-        service_status = True
-        detected_file_names = []
-        detected_file_durations = []
-        on_device_file_durations = []
-        next_pop_time = 0
+        write_to_console(*COLOR_BLUE, f'Started to watch "{watch_path}" folder...')
         while service_status:
             fan_lock.acquire()
 
@@ -749,7 +770,7 @@ def service_worker():
                 write_to_console(*COLOR_GREEN, f'Found new file "{filename}", duration {duration} seconds')
 
             # Dequeue and upload until no available video or device gets full
-            while len(detected_file_names) > 0 and len(on_device_file_durations) < 2:
+            while len(detected_file_names) > 0 and (len(on_device_file_durations) < 2):
                 filename = detected_file_names.pop(0)
                 duration = detected_file_durations.pop(0)
                 full_path = os.path.join(watch_path, filename)
@@ -785,7 +806,7 @@ def service_worker():
                 write_to_console(*COLOR_GREEN, f'Archived "{filename}" to "{archive_path}" folder')
 
             # Pop video and play the next video
-            if len(on_device_file_durations) == 2 and time.time() >= next_pop_time:
+            while len(on_device_file_durations) >= 2 and time.time() >= next_pop_time:
                 write_to_console(*COLOR_BLUE, 'Started to pop the first video...')
                 # Pop the first video
                 FanControl.pop_video(dev_ip_addr)
