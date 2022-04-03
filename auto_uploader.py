@@ -750,7 +750,8 @@ def service_worker():
             num_videos_on_device = len(FanControl.list_video(dev_ip_addr))
             while num_videos_on_device > 1:
                 num_videos_on_device = FanControl.pop_video(dev_ip_addr)
-            on_device_file_durations.append(-1)
+            if num_videos_on_device == 1:
+                on_device_file_durations.append(-1)
             write_to_console(*COLOR_GREEN,
                              f'Reduced the number of videos on device to one')
 
