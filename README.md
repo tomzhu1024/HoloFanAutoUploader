@@ -4,7 +4,7 @@ Automated File Upload Script for X50 Hologram Fan.
 
 ## Compatibility
 
-Tested with *Python 3.8*.
+Tested on *Windows 10* with *Python 3.8*.
 
 ## Run with Python
 
